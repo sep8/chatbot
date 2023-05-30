@@ -21,7 +21,7 @@ if "past" not in st.session_state:
 if "user_input" not in st.session_state:
     st.session_state["user_input"] = ""
 if 'memory' not in st.session_state:
-    st.session_state.memory = ConversationBufferMemory(memory_key='history')
+    st.session_state.memory = ConversationBufferMemory(memory_key='history', return_messages=True)
 
 # Set up the Streamlit app layout
 st.title("🤖 PAIMON")
