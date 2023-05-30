@@ -4,31 +4,25 @@ from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate, MessagesPlaceholder
 from langchain.chains import ConversationChain
 from langchain.memory import ConversationBufferMemory
+from dotenv import load_dotenv
+load_dotenv()
 
 # Set Streamlit page configuration
-st.set_page_config(page_title='MemoryBot🤖', layout='wide')
+st.set_page_config(page_title='MemoryBot🤖', layout='centered', initial_sidebar_state='collapsed')
 # Initialize session states
 if "generated" not in st.session_state:
     st.session_state["generated"] = []
 if "past" not in st.session_state:
     st.session_state["past"] = []
-if "input" not in st.session_state:
-    st.session_state["input"] = ""
+if "user_input" not in st.session_state:
+    st.session_state["user_input"] = ""
 if "stored_session" not in st.session_state:
     st.session_state["stored_session"] = []
+if 'conversation_memory' not in st.session_state:
+    st.session_state.conversation_memory =  ConversationBufferMemory(return_messages=True)
 
-# Define function to get user input
-def get_text():
-    """
-    Get the user input text.
-
-    Returns:
-        (str): The text entered by the user
-    """
-    input_text = st.text_input("You: ", st.session_state["input"], key="input",
-                            placeholder="Your AI assistant here! Ask me anything ...", 
-                            label_visibility='hidden')
-    return input_text
+# Set up the Streamlit app layout
+st.title("🤖 PAIMON")
 
 @st.cache_data
 def get_system_prompt_text():
@@ -46,12 +40,14 @@ def get_prompt():
 @st.cache_resource 
 def load_chat_chain(openai_api_key, model_name, openai_proxy=os.getenv('openai_proxy')):
     llm = ChatOpenAI(temperature=1.0, model_name=model_name, openai_api_key=openai_api_key, openai_proxy=openai_proxy)
-    # Create a ConversationEntityMemory object if not already created
-    if 'conversation_memory' not in st.session_state:
-            st.session_state.conversation_memory =  ConversationBufferMemory(return_messages=True)
     conversation_chain = ConversationChain(memory=st.session_state.conversation_memory, prompt=get_prompt(), verbose=True, llm=llm)
     return conversation_chain
 
+# Set up sidebar with various options, init chat conversation instance
+with st.sidebar:
+    MODEL = st.selectbox(label='Model', options=['gpt-3.5-turbo'])
+    API_KEY = st.text_input("API-KEY", os.getenv('openai_api_key'), type="password")
+    
 # Define function to start a new chat
 def new_chat():
     """
@@ -67,58 +63,35 @@ def new_chat():
     st.session_state["input"] = ""
     st.session_state.conversation_memory.buffer.clear()
 
-# Set up sidebar with various options
-with st.sidebar.expander("🛠️ ", expanded=False):
-    # Option to preview memory store
-    if st.checkbox("Preview memory store"):
-        with st.expander("Memory-Store", expanded=False):
-            st.session_state.conversation_memory.store
-    # Option to preview memory buffer
-    if st.checkbox("Preview memory buffer"):
-        with st.expander("Bufffer-Store", expanded=False):
-            st.session_state.conversation_memory.buffer
-    MODEL = st.selectbox(label='Model', options=['gpt-3.5-turbo'])
-    K = st.number_input(' (#)Summary of prompts to consider',min_value=3,max_value=1000)
-
-# Set up the Streamlit app layout
-st.title("🤖 PAIMON")
-
-# Ask the user to enter their OpenAI API key
-API_KEY = st.sidebar.text_input("API-KEY", type="password")
-
-# Session state storage would be ideal
-if API_KEY:
-   Conversation = load_chat_chain(openai_api_key=API_KEY, model_name=MODEL)
-else:
-    st.sidebar.warning('API key required to try this app.The API key is not stored in any form.')
-
-
 # Add a button to start a new chat
 st.sidebar.button("New Chat", on_click = new_chat, type='primary')
 
-# Get the user input
-user_input = get_text()
+# Session state storage would be ideal
+if API_KEY:
+    Conversation = load_chat_chain(openai_api_key=API_KEY, model_name=MODEL)
+else:
+    st.sidebar.warning('API key required to try this app.The API key is not stored in any form.')
 
+# Conversion PAGE
+def submit():
+    st.session_state.user_input = st.session_state.input
+    st.session_state.input = ''
+chat_list = st.container()
+chat_list_expander = chat_list.expander("Conversation", expanded=True)
+chat_list.text_input("You: ", key="input", on_change=submit, placeholder="Your AI assistant here! Ask me anything ...", label_visibility='hidden')
+# Get the user input
+user_input = st.session_state.user_input
 # Generate the output using the ConversationChain object and the user input, and add the input/output to the session
 if user_input:
-    output = Conversation.predict(input=user_input)  
+    output = Conversation.predict(input=user_input)
     st.session_state.past.append(user_input)  
     st.session_state.generated.append(output)  
 
-# Allow to download as well
-download_str = []
-# Display the conversation history using an expander, and allow the user to download it
-with st.expander("Conversation", expanded=True):
-    for i in range(len(st.session_state['generated'])-1, -1, -1):
-        st.info(st.session_state["past"][i],icon="🧐")
+# Conversation list
+with chat_list_expander:
+    for i in range(len(st.session_state['generated'])):
+        st.info(st.session_state["past"][i], icon="🧐")
         st.success(st.session_state["generated"][i], icon="🤖")
-        download_str.append(st.session_state["past"][i])
-        download_str.append(st.session_state["generated"][i])
-    
-    # Can throw error - requires fix
-    download_str = '\n'.join(download_str)
-    if download_str:
-        st.download_button('Download',download_str)
 
 # Display stored conversation sessions in the sidebar
 for i, sublist in enumerate(st.session_state.stored_session):
